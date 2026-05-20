@@ -157,6 +157,14 @@
       </div>
     </div>
 
+    <!-- Frame image popup (view painting/object) -->
+    <div id="frame-popup" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:210;pointer-events:none;opacity:0;transition:opacity .25s;">
+      <div style="position:relative;max-width:92%;max-height:92%;pointer-events:auto;">
+        <button id="frame-close" onclick="hideFramePopup()" style="position:absolute;top:-14px;right:-14px;z-index:220;background:#222;color:#fff;border-radius:50%;width:36px;height:36px;border:none;cursor:pointer;">✕</button>
+        <img id="frame-img" src="" alt="" style="display:block;max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);" />
+      </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
   </body>
 </html>

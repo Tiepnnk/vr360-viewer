@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { rotate } from 'three/tsl';
 
 // ─── 1. RENDERER ─────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -37,6 +38,25 @@ const SCENES = [
         targetScene: 1,
         label: 'Vào phòng kế',
       },
+    ],
+    // optional flat frames (picture/objects) to place on the interior walls
+    frames: [
+      {
+        texture: '/painting1.jpg',
+        position: new THREE.Vector3(40, 100, -440),
+        size: [140, 90], // width, height in the same units used for sprites
+        title: 'Tranh treo tường cũ',
+        // optional per-frame lookAt target (world coords). If omitted, defaults to (0,0,0)
+        lookAt: new THREE.Vector3(0, 0, 0),
+      },
+      {
+        texture: '/tranh2.jpg',
+        position: new THREE.Vector3(520, 100, -480),
+        size: [120, 70],
+        title: 'Tranh treo tường',
+        rotateY: 0,
+        rotateX: 0
+      }
     ],
   },
   {
@@ -107,10 +127,19 @@ function createHotspotSprite(label) {
 
 // ─── 6. HOTSPOT MANAGER ──────────────────────────────────────────────────────
 const hotspots = [];
+const frames = [];
 
 function clearHotspots() {
   hotspots.forEach(({ sprite }) => scene.remove(sprite));
   hotspots.length = 0;
+}
+
+function clearFrames() {
+  frames.forEach(m => {
+    if (m.material && m.material.map) try { m.material.map.dispose(); } catch (e) {}
+    scene.remove(m);
+  });
+  frames.length = 0;
 }
 
 // ─── 7. FADE OVERLAY ─────────────────────────────────────────────────────────
@@ -154,6 +183,7 @@ function loadScene(index) {
         console.log('Loaded panorama:', SCENES[index].texture);
 
         clearHotspots();
+        clearFrames();
         SCENES[index].hotspots.forEach((h) => {
           const sprite = createHotspotSprite(h.label);
           const pos = h.position.clone().normalize().multiplyScalar(200);
@@ -162,6 +192,35 @@ function loadScene(index) {
           sprite.userData.baseY = pos.y;
           scene.add(sprite);
           hotspots.push({ sprite, targetScene: h.targetScene });
+        });
+
+        // Create decorative frames (planes) placed on the interior of the sphere
+        (SCENES[index].frames || []).forEach((f, i) => {
+          loader.load(f.texture, (tex) => {
+            if (tex) {
+              if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+              else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+              tex.needsUpdate = true;
+            }
+
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
+            const geom = new THREE.PlaneGeometry(f.size[0], f.size[1]);
+            const mesh = new THREE.Mesh(geom, mat);
+
+            // position slightly inside the sphere surface (sphere radius ≈500)
+            const pos = f.position.clone().normalize().multiplyScalar(300);
+            mesh.position.copy(pos);
+
+            // Make the plane face the specified target (per-frame) or scene center
+            const lookTarget = f.lookAt ? f.lookAt.clone() : new THREE.Vector3(200, 40, 0);
+            mesh.lookAt(lookTarget);
+            if (f.rotateY) mesh.rotateY(THREE.MathUtils.degToRad(f.rotateY));
+
+            mesh.userData = { isFrame: true, texture: f.texture, title: f.title };
+            scene.add(mesh);
+            frames.push(mesh);
+            console.log('Loaded frame:', f.texture, 'at', mesh.position.toArray());
+          });
         });
 
         // Hiện/ẩn nút thông tin HTML theo scene
@@ -254,9 +313,19 @@ renderer.domElement.addEventListener('click', (e) => {
   raycaster.setFromCamera(mouse, camera);
 
   // Kiểm tra click vào navigation hotspot
-  const hits = raycaster.intersectObjects(hotspots.map(h => h.sprite));
+  const interactive = hotspots.map(h => h.sprite).concat(frames);
+  const hits = raycaster.intersectObjects(interactive);
   if (hits.length > 0) {
-    loadScene(hits[0].object.userData.targetScene);
+    const obj = hits[0].object;
+    if (obj.userData && obj.userData.targetScene !== undefined) {
+      loadScene(obj.userData.targetScene);
+      return;
+    }
+    if (obj.userData && obj.userData.isFrame) {
+      // open frame popup
+      showFramePopup({ src: obj.userData.texture, title: obj.userData.title });
+      return;
+    }
   }
 });
 
@@ -265,7 +334,7 @@ renderer.domElement.addEventListener('mousemove', (e) => {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(hotspots.map(h => h.sprite));
+  const hits = raycaster.intersectObjects(hotspots.map(h => h.sprite).concat(frames));
   renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'grab';
 });
 
@@ -341,6 +410,28 @@ window.openSceneInfo = () => {
   const info = SCENE_INFO[currentScene];
   if (info) showInfoPopup(info);
 };
+
+// Frame popup helpers (uses elements added to index.html)
+function showFramePopup({ src, title } = {}) {
+  const popup = document.getElementById('frame-popup');
+  const img = document.getElementById('frame-img');
+  if (!popup || !img) return;
+  img.src = src || '';
+  img.alt = title || '';
+  popup.style.opacity = '1';
+  popup.style.pointerEvents = 'auto';
+}
+
+function hideFramePopup() {
+  const popup = document.getElementById('frame-popup');
+  const img = document.getElementById('frame-img');
+  if (!popup) return;
+  popup.style.opacity = '0';
+  popup.style.pointerEvents = 'none';
+  if (img) img.src = '';
+}
+window.showFramePopup = showFramePopup;
+window.hideFramePopup = hideFramePopup;
 
 // Click vào backdrop đóng popup
 document.getElementById('info-popup')?.addEventListener('click', (e) => {
